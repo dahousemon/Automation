@@ -1,4 +1,4 @@
 workflow Print-Message
 {
-    Write-output "Testing Source control"
+    Write-output "Testing Source control HouseFoo"
 }
