@@ -1,23 +1,27 @@
 ﻿#Login into Azure
 #Login-AzureRMAccount
 
+
 #Authenticate using Certificate
 $TenantID = "26633ef6-38a7-478b-b705-03cbcf875ca7"
-$AppID = "af5a9051-f0d1-49fd-9256-f402b486f72b"
-$Thumbprint = (Get-ChildItem cert:\CurrentUser\My\ | Where-Object {$_.Subject -match "CN=houseScriptCert"}).Thumbprint
+$AppID = "639f803f-8af9-47fd-bf21-030c71cdf9ed"
+$Thumbprint = (Get-ChildItem cert:\CurrentUser\My\ | Where-Object {$_.Subject -match "CN=houseScriptCert2"}).Thumbprint
 
 Login-AzureRmAccount -ServicePrincipal -CertificateThumbprint $Thumbprint `
 -ApplicationId $AppID -TenantId $TenantID
-
-
 
 # Need to ask for Azure Subsciption name
 $subscr="Visual Studio Enterprise"
 Get-AzureRmSubscription -SubscriptionName $subscr | Select-AzureRmSubscription
 
-#TestNumber
 
-$testnum = "24"
+$vmos = Read-Host -Prompt "Type Of OS.  0 = 2016 DataCenter / 1 = 2008-R2-SP1 "
+
+$testnum = Read-Host -Prompt "Test Number Identifier "
+
+
+
+
 
 #Create Azure Resource Group
 #NEED Ask Resource Group Name 
@@ -38,10 +42,6 @@ $networkinterface = "clduscentpocdc1230" + $testnum
 
 
 
-
-
-
-
 #Create VM
 $vmDCName = "clduscentPOC" + $testnum
 $vnName = "Centeral_US_Region_Network" + $testnum
@@ -51,6 +51,22 @@ $vmPublicIPname= "clduscentPOCDC1-IP" + $testnum
 
 $cred=Get-Credential -Message "Type the name and password of the local administrator account."
 
+
+
+switch ($vmos) {
+
+0 {$useimage = "MicrosoftWindowsServer:WindowsServer:2016-Datacenter-with-Containers:latest" }
+1 {$useimage = "MicrosoftWindowsServer:WindowsServer:2008-R2-SP1:latest" }
+
+
+
+}
+
+
+
+
+
+
 New-AzureRmVm  `
     -Name $vmDCName `
     -Location $locName `
@@ -58,22 +74,30 @@ New-AzureRmVm  `
     -SubnetName $vnSubnetName `
     -PublicIpAddressName $vmPublicIPname `
     -OpenPorts 3389 `
-    -Credential $cred `
-    -ImageName "MicrosoftWindowsServer:WindowsServer:2016-Datacenter-with-Containers:latest" `
+    -ImageName $useimage `
     -ResourceGroupName $rgName `
-    -size "Standard_A1"
-    
-    
+    -size "Standard_A1" `
+    -Credential $cred
+ 
+  
+    #-Credential $cred `
+
+   #-ImageName "MicrosoftWindowsServer:WindowsServer:2016-Datacenter-with-Containers:latest" `
+
+   
     #Local Network Gateway
  New-AzureRmLocalNetworkGateway -Name $localNetworkGatewayName -ResourceGroupName $rgName `
 -Location $locName -GatewayIpAddress '225.36.12.24' -AddressPrefix '192.168.1.0/27'
 
-
+<# 
 
 #Create New Virtal Network
 $vrNWname = "VirtualNetwork" + $testnum
 
-New-AzureRmVirtualNetwork -Name $vrNWname -Location $locName -ResourceGroupName $rgName -AddressPrefix '10.0.0.0/16'
+#New-AzureRmVirtualNetwork -Name $vrNWname -Location $locName -ResourceGroupName $rgName -AddressPrefix '10.0.0.0/16'
+$ngwpip = New-AzureRMPublicIpAddress -Name ngwpip -ResourceGroupName $rgName -Location $locName  -AllocationMethod Dynamic
+$ngwipconfig = New-AzureRMVirtualNetworkGatewayIpConfig -Name ngwipconfig -SubnetId $subnet.Id -PublicIpAddressId $ngwpip.Id
+$newvnetgateway = New-AzureRmVirtualNetworkGateway -Name myNGW -ResourceGroupName $rgName -Location $locName  -IpConfigurations $ngwIpConfig  -GatewayType "Vpn" -VpnType "RouteBased" -GatewaySku "Basic"
 
 
 
@@ -82,10 +106,10 @@ $foo = Get-AzureRmLocalNetworkGateway -Name $localNetworkGatewayName -ResourceGr
 $foo2 = Get-AzureRmVirtualNetworkGateway -Name $vnName -ResourceGroupName $rgName
 
 New-AzureRmVirtualNetworkGatewayConnection -Name $localNetworkGatewayConnection -ResourceGroupName $rgName `
--Location $locName -VirtualNetworkGateway1 $foo2 -LocalNetworkGateway2 $foo `
+-Location $locName -VirtualNetworkGateway1 $foo2 
 -ConnectionType IPsec -RoutingWeight 10 -SharedKey 'GoodMorning'
 
-
+#>
 
 Set-AzureRmVMExtension -ResourceGroupName $rgName -Location $locName `
  -extensiontype "NetworkWatcherAgentWindows"  `
@@ -95,3 +119,38 @@ Set-AzureRmVMExtension -ResourceGroupName $rgName -Location $locName `
  -Settings @{"workspaceId" = "WorkspaceID"} `
  -VMName $vmDCName `
  -ProtectedSettings @{"workspaceKey"= "workspaceID"}
+
+
+
+ #Encrypt VM Disk that was just created.
+ $encryptVaultName = "VauktPOCRH111"
+ #$aadAppName = ( Get-AzureADApplication -SearchString 'housescripting')
+
+
+ #Get the Vault for Encryption
+ Get-AzureKeyVaultKey –VaultName 'VauktPOCRH111'
+
+
+#Get service Principals
+#$SvcPrincipals = (Get-AzureRmADServicePrincipal -SearchString $aadAppName)
+
+<#
+
+ # Define required information for our Key Vault and keys
+$keyVault = Get-AzureRmKeyVault -VaultName $keyVaultName -ResourceGroupName $rgName;
+$diskEncryptionKeyVaultUrl = $keyVault.VaultUri;
+$keyVaultResourceId = $keyVault.ResourceId;
+$keyEncryptionKeyUrl = (Get-AzureKeyVaultKey -VaultName $keyVaultName -Name "myKey").Key.kid;
+
+ #Encrypt VM Disk
+ Set-AzureRmVMDiskEncryptionExtension `
+    -ResourceGroupName $rgName `
+    -VMName $vmDCName `
+    -AadClientID $app.ApplicationId `
+    -DiskEncryptionKeyVaultUrl $diskEncryptionKeyVaultUrl `
+    -DiskEncryptionKeyVaultId $keyVaultResourceId `
+    -KeyEncryptionKeyUrl $keyEncryptionKeyUrl `
+   
+   #>
+
+    #   -AadClientSecret $securePassword `
