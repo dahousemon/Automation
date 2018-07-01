@@ -1,4 +1,6 @@
-workflow Print-Message
+workflow MyFirstRunbook-Workflow
 {
-    Write-output "Testing Source control HouseFoo_Pepper!"
+$Conn = Get-AutomationConnection -Name AzureRunAsConnection
+Connect-AzureRmAccount -ServicePrincipal -Tenant $Conn.TenantID -ApplicationId $Conn.ApplicationID -CertificateThumbprint $Conn.CertificateThumbprint
+Start-AzureRmVM -Name 'DC1' -ResourceGroupName 'o365Test'
 }
